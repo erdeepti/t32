@@ -1,0 +1,210 @@
+; --------------------------------------------------------------------------------
+; @Title: Infineon TC3xx REPROGRAM HSM ,REPROGRAM BootManger ,REPROGRAM BootLoader
+; REPROGRAM DF1 Initialisation & REPROGRAM Application & calibration .
+;
+; @Description:
+;
+; The script enables to program all HSM related settings with in the UCBs. All
+; settings only take effect after a reset of the device. 
+; 
+; The script must be executed on a TriCore debugger!
+; --------------------------------------------------------------------------------
+; $Id: tc3xx_flash_all.cmm 1.1 2023/05/07 13:29:59CET Anamika Maheshwari Draft 
+
+
+
+; --------------------------------------------------------------------------------
+;Startup 
+;
+
+DO Scripts\C19_BR19\Startup\C19_startup.cmm
+
+
+; --------------------------------------------------------------------------------
+
+Data.dump 0xA0004000 /Long /SpotLight ; Display the contents of the FLASH in a Data.dump window
+AREA.view
+Data.dump 0x80004000 /Long /SpotLight ; Display the contents of the HSM in a Data.dump window
+PRIVATE &answer
+
+
+
+; --------------------------------------------------------------------------------
+; Force Disable the HSM boot configuration HSMBOOT=PROCONHSMCFG BOOTINDEX->HSMSEL0->PROCONHSMCBS 
+;
+
+DO Scripts/C19_BR19/flash/tc3xx-hsm-config.cmm PROGRAM_REGISTER UCBHSM_COTP0 PROCONHSMCFG=0x00000000 PROCONHSMCBS=0x00000000 FORCE
+
+
+; --------------------------------------------------------------------------------
+; Erase All FLASH programming before flashing again 
+;
+
+
+LOCAL &hsmAddress &valid &valueAthsmAddress
+&valid=FALSE()
+&hsmAddress=0xA0004000
+&valueAthsmAddress = 0
+
+GOSUB readLong "&hsmAddress"
+RETURNVALUES &valueAthsmAddress
+
+
+IF "&valueAthsmAddress"=="?"
+(
+    PRINT "No Erase Require as there is no data available"
+    DIALOG.MESSAGE "No programmed Flash found!"
+    ;&valid=TRUE()      ; Flash is not empty at reset entry.
+)
+ELSE (&valueAthsmAddress&0xffffffff)!=0x00000000
+(
+    PRINT "Value at Address &" &hsmAddress " is " &valueAthsmAddress
+    DO Scripts\C19_BR19\Flash\C19_Erase_All.cmm
+    DIALOG.YESNO "ARE YOU ABLE TO OBSERVE ???????? AT ADDRESS 0x80004000 OR 0xA0004000 ?"\
+                "HINT : 'YES'-> FLASH CONTENT IS ERASED"\
+                "'NO'-> FLASH CONTENT IS NOT YET ERASED"
+    ENTRY &result
+    IF !&result
+    (
+       DIALOG.MESSAGE "Aborting Flashing "\
+                "Execute 'FLASH.ERASE.ALL' manually"
+        DIALOG.view
+        (
+            HEADER "Flash.Erase.all"
+            ;define position (x, y) and horizontal width of the EDIT field
+            ;define action button
+            POS  1. 1. 11. 
+            DEFBUTTON "Erase" 
+            (
+                DO Scripts\C19_BR19\Flash\C19_Erase_All.cmm
+                ;this action is executed when the 'Erase' button is pressed
+            )
+            POS  15. 1. 11.
+            DEFBUTTON "No" 
+            (
+            ;this action is executed when the 'No' button is pressed
+            DIALOG.END
+            )
+        ) 
+    )
+)
+    
+
+
+; --------------------------------------------------------------------------------
+; Disable the HSM boot configuration HSMBOOT=PROCONHSMCFG BOOTINDEX->HSMSEL0->PROCONHSMCBS 
+;
+
+DO Scripts/C19_BR19/flash/tc3xx-hsm-config.cmm PROGRAM_REGISTER UCBHSM_COTP0 PROCONHSMCFG=0x00000000 PROCONHSMCBS=0x00000000 FORCE
+
+
+
+; --------------------------------------------------------------------------------
+; Call C19_Flash_HSM.cmm & REPROGRAM HSM 
+; If user do not want to flash then abort the script 
+;
+
+DIALOG.MESSAGE "REPROGRAM HSM"\
+    "Kindly provide vHsm_*_*_*.hex path to REPROGRAM HSM"
+DO Scripts/C19_BR19/flash/C19_Flash_HSM.cmm
+RETURNVALUES &answer
+IF "&answer"=="End"
+    ENDDO
+
+
+
+; --------------------------------------------------------------------------------
+; Call C19_Flash_BootManager.cmm & REPROGRAM BootManager
+; If user do not want to flash then abort the script 
+;
+
+DIALOG.MESSAGE "REPROGRAM BootManager"\
+    "Kindly provide BootManager_*_*_*.hex path to REPROGRAM BootManager"
+DO Scripts\C19_BR19\Flash\C19_Flash_BootManager.cmm
+RETURNVALUES &answer
+IF "&answer"=="End"
+    ENDDO
+
+
+
+; --------------------------------------------------------------------------------
+; Call C19_Flash_BootManager.cmm & REPROGRAM Bootloader
+; If user do not want to flash then abort the script 
+;
+
+DIALOG.MESSAGE "REPROGRAM Bootloader"\
+    "Kindly provide Bootloader_*_*_*.hex path to REPROGRAM Bootloader"
+DO Scripts\C19_BR19\Flash\C19_Flash_Bootloader.cmm
+RETURNVALUES &answer
+IF "&answer"=="End"
+    ENDDO
+
+
+
+; --------------------------------------------------------------------------------
+; Call C19_Init_DF1_hsm.cmm & REPROGRAM Init_DF1_hsm
+; If user do not want to flash then abort the script 
+;
+
+DIALOG.MESSAGE "REPROGRAM Init_DF1_hsm"\
+    "Kindly provide Init_DF1_hsm_*_*_*.hex path to REPROGRAM Bootloader"
+DO Scripts\C19_BR19\Flash\C19_Init_DF1_hsm.cmm
+RETURNVALUES &answer
+IF "&answer"=="End"
+    ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Enable the HSM boot configuration HSMBOOT=PROCONHSMCFG BOOTINDEX->HSMSEL0->PROCONHSMCBS
+; If user do not want to flash then abort the script 
+;
+
+DO Scripts/C19_BR19/flash/tc3xx-hsm-config.cmm PROGRAM_REGISTER UCBHSM_COTP0 PROCONHSMCFG=0x00000001 PROCONHSMCBS=0x00000001
+DIALOG.YESNO "Have you enabled HSM configuration ?"
+ENTRY &confirm
+IF !&confirm
+    RETURN
+
+
+
+; --------------------------------------------------------------------------------
+; Call C19_Flash_AppAndCal.cmm & REPROGRAM Application & Calibration
+; If user do not want to flash then abort the script 
+;
+
+DIALOG.MESSAGE "REPROGRAM Application & Calibration"\
+    "Kindly provide BSW_AMG_HPEDU_*_*_*.hex path to REPROGRAM Application & Calibration"
+DO Scripts/C19_BR19/Flash/C19_Flash_AppAndCal.cmm
+RETURNVALUES &answer
+IF "&answer"=="End"
+    ENDDO
+
+
+
+; --------------------------------------------------------------------------------
+;Perform  In target system reset
+;
+
+SYStem.RESetTarget
+
+
+
+; --------------------------------------------------------------------------------
+; Read a long word and return its value or "?" in case of a bus error.
+;
+
+readLong:
+(
+    PRIVATE &addr &value
+    PARAMETERS &addr
+    ON ERROR GOTO BusError
+    &value=Data.Long(D:&addr)
+    ON ERROR inherit
+    RETURN "&value"
+BusError:
+    ON ERROR inherit
+    RETURN "?"
+)
+
+
+ENDDO
